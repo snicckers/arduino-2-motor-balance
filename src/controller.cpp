@@ -5,7 +5,8 @@
 /* Global Constants */
 /*--- Propeller Servos -------------------------------------------------------*/
 Servo right_prop;
-double throttle = 1280;
+Servo left_prop;
+double throttle = 1150;
 
 //--- Simple Moving Average Globals ------------------------------------------*/
 const int samples = 75;
@@ -40,11 +41,11 @@ const float loop_micros = (1 / (float)refresh_rate) * 1000000;
 float previous_time, time, loop_time;
 
 /*--- PID Globals ------------------------------------------------------------*/
-float pid, pwm_right, error, previous_error;
+float pid, pwm_right, pwm_left, error, previous_error;
 float pid_p = 0, pid_i = 0, pid_d = 0;
-float k_p = 2.8;
-float k_i = 2.0;
-float k_d = 1.35;
+float k_p = 0.0;
+float k_i = 0.0;
+float k_d = 0.0;
 float desired_angle = 0.0;
 
 /*--- setup mpu --------------------------------------------------------------*/
@@ -306,6 +307,7 @@ void pid_controller(){
   /* Calculate the PWM width. We sum the desired throttle and the PID
   value. */
   pwm_right = throttle + pid;
+  pwm_left = throttle - pid;
 
   /* Once again we map the PWM values to be sure that we won't pass the max and
   min values. This is very important.*/
@@ -318,6 +320,7 @@ void pid_controller(){
   }
 
   right_prop.writeMicroseconds(pwm_right);
+  left_prop.writeMicroseconds(pwm_left);
   previous_error = error;
 }
 
@@ -372,6 +375,10 @@ void setup() {
   /*--- Propellers ---*/
   right_prop.attach(5);
   right_prop.writeMicroseconds(1000);
+  left_prop.attach(3);
+  left_prop.writeMicroseconds(1000);
+
+
   /*--- Calibration ---*/
   time = millis();
   setup_mpu();

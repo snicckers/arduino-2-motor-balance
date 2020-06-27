@@ -16,10 +16,10 @@ int previous_time_pressed;
 bool start_motors = false;
 
 //--- Simple Moving Average Globals ------------------------------------------*/
-const int sma_samples = 15;
-int a_x_readings[sma_samples];
-int a_y_readings[sma_samples];
-int a_z_readings[sma_samples];
+const int samples = 15;
+int a_x_readings[samples];
+int a_y_readings[samples];
+int a_z_readings[samples];
 long int a_read_index = 0;
 long int a_read_total[3] = {0, 0, 0};
 long int a_read_ave[3] = {0, 0, 0};
@@ -41,7 +41,7 @@ float pid, pwm_right, pwm_left, error, previous_error, previous_roll;
 float pid_p = 0, pid_i = 0, pid_d = 0;
 float k_p = 3.78f; //1.4
 float k_i = 0.05f; //1.82
-float k_d = 0.85f;  //1.04
+float k_d = 1.03f;  //1.04
 float desired_angle = 0.0;
 
 /*--- REMOTE CONTROL Globals -------------------------------------------------*/
@@ -54,7 +54,7 @@ unsigned long timer_1, timer_2, timer_3, timer_4;
 /*--- DEBUGGING --------------------------------------------------------------*/
 // General debugging method. Change the mode to change what is printed.
 void debugging(){
-  int mode = 1;
+  int mode = 4;
 
   if (elapsed_time - last_time_print > 20000){
     if(mode == 1){
@@ -140,10 +140,6 @@ void debugging(){
 
     last_time_print = micros();
     }
-
-    if (elapsed_time - last_time_print > 20000){
-      last_time_print = micros();
-    }
   }
 }
 
@@ -209,7 +205,7 @@ void read_mpu(int ** sensor_output_array){
 }
 
 /*--- DATA PROCESSING --------------------------------------------------------*/
-// Simple moving average filter. This method smoothes out the noisey accelerometer data using a simple moving average filter. It isn't too expensive. Be careful when setting the number of sma_samples: Too many sma_samples will lead to a large time-delay, too few sma_samples will lead to a negligible smoothing effect.
+// Simple moving average filter. This method smoothes out the noisey accelerometer data using a simple moving average filter. It isn't too expensive. Be careful when setting the number of samples: Too many samples will lead to a large time-delay, too few samples will lead to a negligible smoothing effect.
 void accel_data_processing(int * sensor_data[]){  //Simple moving average filter
   a_read_total[0] -= a_x_readings[a_read_index];
   a_read_total[1] -= a_y_readings[a_read_index];
@@ -221,12 +217,12 @@ void accel_data_processing(int * sensor_data[]){  //Simple moving average filter
   a_read_total[1] += a_y_readings[a_read_index];
   a_read_total[2] += a_z_readings[a_read_index];
   a_read_index += 1;
-  if (a_read_index >= sma_samples){
+  if (a_read_index >= samples){
     a_read_index = 0;
   }
-  a_read_ave[0] = a_read_total[0] / sma_samples;
-  a_read_ave[1] = a_read_total[1] / sma_samples;
-  a_read_ave[2] = a_read_total[2] / sma_samples;
+  a_read_ave[0] = a_read_total[0] / samples;
+  a_read_ave[1] = a_read_total[1] / samples;
+  a_read_ave[2] = a_read_total[2] / samples;
 }
 
 // Remove the average gyroscope drift / offset (recorded in the calibration method) from the gyroscope data that is recorded during each scan.
@@ -257,13 +253,12 @@ float invSqrt( float number ){
 // Calculate attitude during runtime.
 void calculate_attitude(int sensor_data[]){
   /*--- Madgwick Filter ------------------------------------------------------*/
-  float normalize;
 
   //Import and normalize accelerometer data
   float a_x = sensor_data[0];
   float a_y = sensor_data[1];
   float a_z = sensor_data[2];
-  normalize = invSqrt(a_x*a_x + a_y*a_y + a_z*a_z);
+  float normalize = invSqrt(a_x*a_x + a_y*a_y + a_z*a_z);
   a_x *= normalize; a_y *= normalize; a_z *= normalize;
 
   // 1.09 = fudge factor. g_x in radians / sec
@@ -308,7 +303,7 @@ void calculate_attitude(int sensor_data[]){
   float delF_2 = _8q_2*q2_2 - _4q_2 + _4q_2*q2_3 + _4q_2*q2_0 + _8q_2*q2_1 + _2q_0*a_x - _2q_3*a_y + _4q_2*a_z;
   float delF_3 = _4q_3*q2_2 + _4q_3*q2_1 - _2q_1*a_x - _2q_2*a_y;
 
-  // Change correction_gain for more or less influence of accelerometer on gyro rates.
+  // Change correction_gain for more or less influence on gyro rates.
   qDot_0 -= correction_gain * delF_0;
   qDot_1 -= correction_gain * delF_1;
   qDot_2 -= correction_gain * delF_2;
@@ -318,8 +313,12 @@ void calculate_attitude(int sensor_data[]){
   q_2 += qDot_2 * sample_time;
   q_3 += qDot_3 * sample_time;
 
-  normalize = invSqrt(q_0*q_0 + q_1*q_1 + q_2*q_2 + q_3*q_3);
-  q_0 *= normalize; q_1 *= normalize; q_2 *= normalize; q_3 *= normalize;
+  //normalize = 1.0f / hypot(q_0, hypot(q_1, hypot(q_2, q_3)));
+  // normalize = invSqrt(q_0*q_0 + q_1*q_1 + q_2*q_2 + q_3*q_3);
+  // q_0 *= normalize;
+  // q_1 *= normalize;
+  // q_2 *= normalize;
+  // q_3 *= normalize;
 
   roll = atan2f(2*(q_0*q_1 + q_2*q_3), 1.0f - 2.0f*(q_1*q_1 + q_2*q_2)) * rad_to_degrees + 0.0f;
   pitch = asinf(2.0f * (q_0*q_2 - q_1*q_3)) * rad_to_degrees + 2.0f;
@@ -331,7 +330,7 @@ void calibrate_imu(){
   /* THE IMU MUST NOT BE MOVED DURING STARTUP */
 
   /*--- Simple Moving ave Setup ---*/
-  for (int i = 0; i < sma_samples; i++){
+  for (int i = 0; i < samples; i++){
     a_x_readings[i] = 0;
     a_y_readings[i] = 0;
     a_z_readings[i] = 0;
@@ -406,26 +405,26 @@ void flight_controller(){
 
   /* clamp the PWM values. */
   //----------Right---------//
-  if (pwm_right < 1015){
-    pwm_right = 1015;
+  if (pwm_right < 1000){
+    pwm_right = 1000;
   }
-  if (pwm_right > 1985){
-    pwm_right = 1985;
+  if (pwm_right > 2000){
+    pwm_right = 2000;
   }
     //----------Left---------//
-  if (pwm_left < 1015){
-    pwm_left = 1015;
+  if (pwm_left < 1000){
+    pwm_left = 1000;
   }
-  if (pwm_left > 1985){
-    pwm_left = 1985;
+  if (pwm_left > 2000){
+    pwm_left = 2000;
   }
 
   if (start_motors == true){
     right_prop.writeMicroseconds(pwm_right);
     left_prop.writeMicroseconds(pwm_left);
   } else{
-    right_prop.writeMicroseconds(1010);
-    left_prop.writeMicroseconds(1010);
+    right_prop.writeMicroseconds(1000);
+    left_prop.writeMicroseconds(1000);
   }
 
   previous_error = error;
@@ -433,8 +432,9 @@ void flight_controller(){
 }
 
 void change_setpoint(){
+
   if (receiver_input_channel_1 != 0){
-    desired_angle = map(receiver_input_channel_1, 1000, 2000, 35, -25);
+    desired_angle = map(receiver_input_channel_1, 1000, 2000, 30, -30);
   }
 }
 

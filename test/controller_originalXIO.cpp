@@ -16,35 +16,43 @@ int previous_time_pressed;
 bool start_motors = false;
 
 //--- Simple Moving Average Globals ------------------------------------------*/
-const int sma_samples = 15;
-int a_x_readings[sma_samples];
-int a_y_readings[sma_samples];
-int a_z_readings[sma_samples];
+const int samples = 5;
+int a_x_readings[samples];
+int a_y_readings[samples];
+int a_z_readings[samples];
 long int a_read_index = 0;
 long int a_read_total[3] = {0, 0, 0};
 long int a_read_ave[3] = {0, 0, 0};
 
+/*--- Time Control -----------------------------------------------------------*/
+int refresh_rate = 250;
+float dt = 1 / refresh_rate;
+const float loop_micros = (dt) * 1000000;
+
 /*--- IMU Globals ------------------------------------------------------------*/
 float rad_to_degrees = 57.29577951f;
 float degrees_to_rad = 0.017453293f;
-double lsb_coefficient = (1.0f / 32.8f); // see datasheet
+double lsb_coefficient = (1.0f / 32.8f);
 float roll, pitch, yaw;
-long g_drift[3];
-float q_0 = 1.0f;
-float q_1 = 0.0f;
-float q_2 = 0.0f;
-float q_3 = 0.0f;
+long g_cal[3];
+float q0 = 1.0f;
+float q1 = 0.0f;
+float q2 = 0.0f;
+float q3 = 0.0f;
 float correction_gain = 0.2f;
 
 /*--- PID Globals ------------------------------------------------------------*/
 float pid, pwm_right, pwm_left, error, previous_error, previous_roll;
 float pid_p = 0, pid_i = 0, pid_d = 0;
-float k_p = 3.78f; //1.4
-float k_i = 0.05f; //1.82
-float k_d = 0.85f;  //1.04
+float k_p = 3.78f; //3.5
+float k_i = 0.05f; //
+float k_d = 1.03f;  //0.85
+// float k_p = 1.4;
+// float k_i = 1.82;
+// float k_d = 1.04;
 float desired_angle = 0.0;
 
-/*--- REMOTE CONTROL Globals -------------------------------------------------*/
+/*--- REMOTE CONTROL ---------------------------------------------------------*/
 IRrecv irrecv(12);    // IR reciver digital input to pin 12.
 decode_results results;
 byte last_channel_1, last_channel_2, last_channel_3, last_channel_4;
@@ -52,20 +60,16 @@ int receiver_input_channel_1, receiver_input_channel_2, receiver_input_channel_3
 unsigned long timer_1, timer_2, timer_3, timer_4;
 
 /*--- DEBUGGING --------------------------------------------------------------*/
-// General debugging method. Change the mode to change what is printed.
 void debugging(){
   int mode = 1;
 
   if (elapsed_time - last_time_print > 20000){
     if(mode == 1){
-      Serial.print("Roll: ");
+        Serial.print("Roll: ");
       Serial.print(roll);
 
       Serial.print(" - Pitch: ");
       Serial.print(pitch);
-
-      Serial.print(" - Pitch: ");
-      Serial.print(yaw);
 
       Serial.print(" - pwm left: ");
       Serial.print(pwm_left);
@@ -123,31 +127,10 @@ void debugging(){
       // Serial.print(k_d);
       Serial.print("\n");
     }
-
-    if (elapsed_time - last_time_print > 20000){
-      if(mode == 4){
-        Serial.print("Roll: ");
-        Serial.print(roll);
-
-        Serial.print(" - Pitch: ");
-        Serial.print(pitch);
-
-        Serial.print(" - Pitch: ");
-        Serial.print(yaw);
-
-        Serial.print("\n");
-      }
-
     last_time_print = micros();
-    }
-
-    if (elapsed_time - last_time_print > 20000){
-      last_time_print = micros();
-    }
   }
 }
 
-// This method prints the time taken from the beginning of the scan to the time this method is envocked. In order not to kill performance, this is only printed every idk 100000 microseconds.
 void debug_loopTime(){
   if (elapsed_time - last_time_print > 100000){
     Serial.print(micros() - elapsed_time);
@@ -209,7 +192,6 @@ void read_mpu(int ** sensor_output_array){
 }
 
 /*--- DATA PROCESSING --------------------------------------------------------*/
-// Simple moving average filter. This method smoothes out the noisey accelerometer data using a simple moving average filter. It isn't too expensive. Be careful when setting the number of sma_samples: Too many sma_samples will lead to a large time-delay, too few sma_samples will lead to a negligible smoothing effect.
 void accel_data_processing(int * sensor_data[]){  //Simple moving average filter
   a_read_total[0] -= a_x_readings[a_read_index];
   a_read_total[1] -= a_y_readings[a_read_index];
@@ -221,23 +203,21 @@ void accel_data_processing(int * sensor_data[]){  //Simple moving average filter
   a_read_total[1] += a_y_readings[a_read_index];
   a_read_total[2] += a_z_readings[a_read_index];
   a_read_index += 1;
-  if (a_read_index >= sma_samples){
+  if (a_read_index >= samples){
     a_read_index = 0;
   }
-  a_read_ave[0] = a_read_total[0] / sma_samples;
-  a_read_ave[1] = a_read_total[1] / sma_samples;
-  a_read_ave[2] = a_read_total[2] / sma_samples;
+  a_read_ave[0] = a_read_total[0] / samples;
+  a_read_ave[1] = a_read_total[1] / samples;
+  a_read_ave[2] = a_read_total[2] / samples;
 }
 
-// Remove the average gyroscope drift / offset (recorded in the calibration method) from the gyroscope data that is recorded during each scan.
 void gyro_data_processing(int * sensor_data[]){
-  (*sensor_data)[4] -= g_drift[0];
-  (*sensor_data)[5] -= g_drift[1];
-  (*sensor_data)[6] -= g_drift[2];
+  (*sensor_data)[4] -= g_cal[0];
+  (*sensor_data)[5] -= g_cal[1];
+  (*sensor_data)[6] -= g_cal[2];
 }
 
 /*--- CALCULATE ATTITUDE -----------------------------------------------------*/
-// A cheap way to find the inverse squareroot of a number.
 float invSqrt( float number ){
     union {
         float f;
@@ -254,84 +234,86 @@ float invSqrt( float number ){
     return conv.f;
 }
 
-// Calculate attitude during runtime.
 void calculate_attitude(int sensor_data[]){
   /*--- Madgwick Filter ------------------------------------------------------*/
-  float normalize;
+  // Heavily based off of the Arduino Madgwick AHRS library by Paul Stoffregen
+  float recip_norm;
 
-  //Import and normalize accelerometer data
-  float a_x = sensor_data[0];
-  float a_y = sensor_data[1];
-  float a_z = sensor_data[2];
-  normalize = invSqrt(a_x*a_x + a_y*a_y + a_z*a_z);
-  a_x *= normalize; a_y *= normalize; a_z *= normalize;
+  float ax = sensor_data[0];
+  float ay = sensor_data[1];
+  float az = sensor_data[2];
+  float gx = sensor_data[4] * (lsb_coefficient) * (1.09) * degrees_to_rad;
+  float gy = sensor_data[5] * (lsb_coefficient) * (1.09) * degrees_to_rad;
+  float gz = sensor_data[6] * (lsb_coefficient) * (1.09) * degrees_to_rad;
 
-  // 1.09 = fudge factor. g_x in radians / sec
-  float g_x = sensor_data[4] * (lsb_coefficient) * (1.0) * degrees_to_rad;
-  float g_y = sensor_data[5] * (lsb_coefficient) * (1.0) * degrees_to_rad;
-  float g_z = sensor_data[6] * (lsb_coefficient) * (1.0) * degrees_to_rad;
+  float qDot1 = 0.5f * (-q1*gx - q2*gy - q3*gz);
+  float qDot2 = 0.5f * (q0*gx + q2*gz - q3*gy);
+  float qDot3 = 0.5f * (q0*gy - q1*gz + q3*gx);
+  float qDot4 = 0.5f * (q0*gz + q1*gy - q2*gx);
 
-  // q_dot = 0.5 angular velocity rotation maxtrix * q.
-  // Reference: A New Quaternion-Based Kalman Filter for Real-Time Attitude Estimation Using the Two-Step Geometrically-Intuitive Correction Algorithm. Equation 32 in section 2.3.1
+  /* If accelerometer values are valid (ie don't lead to NAN) then correct gyro
+  values */
+  if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
 
-  float qDot_0 = 0.5f*(-q_1*g_x - q_2*g_y - q_3*g_z);
-  float qDot_1 = 0.5f*(q_0*g_x + q_2*g_z - q_3*g_y);
-  float qDot_2 = 0.5f*(q_0*g_y + q_2*g_x - q_1*g_z);
-  float qDot_3 = 0.5f*(q_0*g_z + q_1*g_y - q_2*g_x);
+  	// Normalise accelerometer measurement
+  	recip_norm = invSqrt(ax * ax + ay * ay + az * az);
+		ax *= recip_norm;
+  	ay *= recip_norm;
+  	az *= recip_norm;
 
-  /* References:
-      1. https://nitinjsanket.github.io/tutorials/attitudeest/madgwick - (primary)
-      2. Estimation of IMU and MARG orientation using a gradient descent algorithm (Sebastian O.H. Madgwick, Andrew J.L. Harrison, Ravi Vaidyanathan) - (supplementary) */
+  	float _2q0 = 2.0f * q0;
+		float _2q1 = 2.0f * q1;
+  	float _2q2 = 2.0f * q2;
+  	float _2q3 = 2.0f * q3;
+		float _4q0 = 4.0f * q0;
+  	float _4q1 = 4.0f * q1;
+  	float _4q2 = 4.0f * q2;
+  	float _8q1 = 8.0f * q1;
+  	float _8q2 = 8.0f * q2;
+  	float q0q0 = q0 * q0;
+  	float q1q1 = q1 * q1;
+  	float q2q2 = q2 * q2;
+  	float q3q3 = q3 * q3;
 
-  // Setup for gradient descent algorithm: precalculate any values that occur more than once. Doing this saves the processer 30 multiplication operations.
-  float q2_0 = q_0 * q_0; //a2
-  float q2_1 = q_1 * q_1; //b2
-  float q2_2 = q_2 * q_2; //c2
-  float q2_3 = q_3 * q_3; //d2
+		// Gradient decent algorithm corrective step
+		float s0 = _4q0 * q2q2 + _2q2 * ax + _4q0 * q1q1 - _2q1 * ay;
+  	float s1 = _4q1 * q3q3 - _2q3 * ax + 4.0f * q0q0 * q1 - _2q0 * ay - _4q1 + _8q1 * q1q1 + _8q1 * q2q2 + _4q1 * az;
+		float s2 = 4.0f * q0q0 * q2 + _2q0 * ax + _4q2 * q3q3 - _2q3 * ay - _4q2 + _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az;
+  	float s3 = 4.0f * q1q1 * q3 - _2q1 * ax + 4.0f * q2q2 * q3 - _2q2 * ay;
+  	recip_norm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
+  	s0 *= recip_norm;
+  	s1 *= recip_norm;
+  	s2 *= recip_norm;
+  	s3 *= recip_norm;
 
-  float _4q_0 = 4.0f * q_0; //4a
-  float _4q_1 = 4.0f * q_1; //4b
-  float _4q_2 = 4.0f * q_2; //4c
-  float _4q_3 = 4.0f * q_3; //4d
+  	// Apply feedback step
+  	qDot1 -= correction_gain * s0;
+  	qDot2 -= correction_gain * s1;
+  	qDot3 -= correction_gain * s2;
+		qDot4 -= correction_gain * s3;
+	}
 
-  float _2q_0 = 2.0f * q_0; //2a
-  float _2q_1 = 2.0f * q_1; //2b
-  float _2q_2 = 2.0f * q_2; //2c
-  float _2q_3 = 2.0f * q_3; //2d
+  q0 += qDot1 * sample_time;
+  q1 += qDot2 * sample_time;
+  q2 += qDot3 * sample_time;
+  q3 += qDot4 * sample_time;
 
-  float _8q_1 = 8.0f * q_1; //8b
-  float _8q_2 = 8.0f * q_2; //8c
+  recip_norm = invSqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
+  q0 *= recip_norm;
+  q1 *= recip_norm;
+  q2 *= recip_norm;
+  q3 *= recip_norm;
 
-  // Gradient Descent algorithm
-  float delF_0 = _4q_0 * q2_2 + _4q_0 * q2_1 + _2q_2 * a_x - _2q_1 * a_y;
-  float delF_1 = _8q_1*q2_1 + _4q_1*q2_3 + _4q_1*q2_0 - _4q_1 + _8q_1*q2_2 - _2q_3*a_x - _2q_0*a_y + _4q_1*a_z;
-  float delF_2 = _8q_2*q2_2 - _4q_2 + _4q_2*q2_3 + _4q_2*q2_0 + _8q_2*q2_1 + _2q_0*a_x - _2q_3*a_y + _4q_2*a_z;
-  float delF_3 = _4q_3*q2_2 + _4q_3*q2_1 - _2q_1*a_x - _2q_2*a_y;
-
-  // Change correction_gain for more or less influence of accelerometer on gyro rates.
-  qDot_0 -= correction_gain * delF_0;
-  qDot_1 -= correction_gain * delF_1;
-  qDot_2 -= correction_gain * delF_2;
-  qDot_3 -= correction_gain * delF_3;
-  q_0 += qDot_0 * sample_time;
-  q_1 += qDot_1 * sample_time;
-  q_2 += qDot_2 * sample_time;
-  q_3 += qDot_3 * sample_time;
-
-  normalize = invSqrt(q_0*q_0 + q_1*q_1 + q_2*q_2 + q_3*q_3);
-  q_0 *= normalize; q_1 *= normalize; q_2 *= normalize; q_3 *= normalize;
-
-  roll = atan2f(2*(q_0*q_1 + q_2*q_3), 1.0f - 2.0f*(q_1*q_1 + q_2*q_2)) * rad_to_degrees + 0.0f;
-  pitch = asinf(2.0f * (q_0*q_2 - q_1*q_3)) * rad_to_degrees + 2.0f;
-  yaw = atan2f(2*(q_0*q_3 + q_1*q_2), 1.0f - 2.0f*(q_2*q_2 + q_3*q_3)) * rad_to_degrees;
+  roll = atan2f(2*(q0*q1 + q2*q3), 1.0f - 2.0f*(q1*q1 + q2*q2)) * rad_to_degrees - 1.0f;
+  pitch = asinf(2.0f * (q0*q2 - q1*q3)) * rad_to_degrees + 3.0f;
+  yaw = atan2f(2*(q0*q3 + q1*q2), 1.0f - 2.0f*(q2*q2 + q3*q3)) * rad_to_degrees;
 }
 
 /*--- CALIBRATE IMU ----------------------------------------------------------*/
 void calibrate_imu(){
-  /* THE IMU MUST NOT BE MOVED DURING STARTUP */
-
+  /* THE IMU MUST NOT BE MOVED DURING SETUP */
   /*--- Simple Moving ave Setup ---*/
-  for (int i = 0; i < sma_samples; i++){
+  for (int i = 0; i < samples; i++){
     a_x_readings[i] = 0;
     a_y_readings[i] = 0;
     a_z_readings[i] = 0;
@@ -343,28 +325,22 @@ void calibrate_imu(){
   for (int i = 0; i < cal_count; i ++){
     sample_time = (micros() - elapsed_time) / 1000000.0f;
     elapsed_time = micros();
-
     // Print the loading bar blips n times
     if(i % 50 == 0) { Serial.print("-"); }
-
     // Collect data from MPU
-    int * data_xyzt;
-    read_mpu(&data_xyzt);
-
-    g_drift[0] += data_xyzt[4];
-    g_drift[1] += data_xyzt[5];
-    g_drift[2] += data_xyzt[6];
-
+    int * data_xyzt; read_mpu(&data_xyzt);
+    g_cal[0] += data_xyzt[4];
+    g_cal[1] += data_xyzt[5];
+    g_cal[2] += data_xyzt[6];
     accel_data_processing(&data_xyzt);
-
+    calculate_attitude(data_xyzt);
     free(data_xyzt); // Clear dynamic memory allocation
-
     delay(3);
   }
-  // Find the averages drift / offset of the raw gyroscope data:
-  g_drift[0] /= cal_count;
-  g_drift[1] /= cal_count;
-  g_drift[2] /= cal_count;
+  // Find the average value of the data that was recorded above:
+  g_cal[0] /= cal_count;
+  g_cal[1] /= cal_count;
+  g_cal[2] /= cal_count;
 }
 
 /*--- FLIGHT CONTROLLER ------------------------------------------------------*/
@@ -406,35 +382,42 @@ void flight_controller(){
 
   /* clamp the PWM values. */
   //----------Right---------//
-  if (pwm_right < 1015){
-    pwm_right = 1015;
+  if (pwm_right < 1000){
+    pwm_right = 1000;
   }
-  if (pwm_right > 1985){
-    pwm_right = 1985;
+  if (pwm_right > 2000){
+    pwm_right = 2000;
   }
     //----------Left---------//
-  if (pwm_left < 1015){
-    pwm_left = 1015;
+  if (pwm_left < 1000){
+    pwm_left = 1000;
   }
-  if (pwm_left > 1985){
-    pwm_left = 1985;
+  if (pwm_left > 2000){
+    pwm_left = 2000;
   }
 
   if (start_motors == true){
     right_prop.writeMicroseconds(pwm_right);
     left_prop.writeMicroseconds(pwm_left);
   } else{
-    right_prop.writeMicroseconds(1010);
-    left_prop.writeMicroseconds(1010);
+    right_prop.writeMicroseconds(1000);
+    left_prop.writeMicroseconds(1000);
   }
 
   previous_error = error;
   previous_roll = roll;
 }
 
-void change_setpoint(){
-  if (receiver_input_channel_1 != 0){
-    desired_angle = map(receiver_input_channel_1, 1000, 2000, 35, -25);
+void motors_on_off(){
+  button_state = digitalRead(13);
+  long int elapsed_time = millis();
+  if (button_state == ACTIVATED && start_motors == false && ((elapsed_time - previous_time_pressed) > 700)){
+    start_motors = true;
+    previous_time_pressed = millis();
+  }
+  else if(button_state == ACTIVATED && start_motors == true && ((elapsed_time - previous_time_pressed) > 700)){
+    start_motors = false;
+    previous_time_pressed = millis();
   }
 }
 
@@ -495,13 +478,20 @@ void IR_remoteControl(){
   }
 }
 
+void change_setpoint(){
+
+  if (receiver_input_channel_1 != 0){
+    desired_angle = map(receiver_input_channel_1, 1000, 2000, 30, -30);
+  }
+}
+
 void setup_interrupts(){
   // put your setup code here, to run once:
-  PCICR |= (1 << PCIE0);    // Set OCIE0 to enable PCMSK0 to scan
+  PCICR |= (1 << PCIE0);  // Set OCIE0 to enable PCMSK0 to scan
   PCMSK0 |= (1 << PCINT0);  // set digital input 8 to trigger an interrupt on state change.
-  PCMSK0 |= (1 << PCINT1);  // input 9
-  PCMSK0 |= (1 << PCINT2);  // input 10
-  PCMSK0 |= (1 << PCINT3);  // input 11
+  PCMSK0 |= (1 << PCINT1);  // etc
+  PCMSK0 |= (1 << PCINT2);
+  PCMSK0 |= (1 << PCINT3);
 }
 
 /*--- SETUP ------------------------------------------------------------------*/
@@ -521,30 +511,27 @@ void setup() {
   calibrate_imu();
 }
 
+
 /*--- MAIN -------------------------------------------------------------------*/
 void loop(){
   sample_time = (micros() - elapsed_time) / 1000000.0f;
   elapsed_time = micros();
-
   //IMU
   int * data_xyzt;
+  change_setpoint();
   read_mpu(&data_xyzt);
   accel_data_processing(&data_xyzt);
   gyro_data_processing(&data_xyzt);
   calculate_attitude(data_xyzt);
-  //debug_loopTime();
   free(data_xyzt);  // Clear allocated memory for data array.
-
   // FLIGHT CONTROLLER
-  change_setpoint();
+  roll = roll - 5;
   flight_controller();
-
   // DEBUGGING
   debugging();
-
   //CALIBRATION CONTROLS
   IR_remoteControl();
-
+  //debug_loopTime();
   // REFRESH RATE
   while (micros() - elapsed_time < 5500);
   // if (micros() - elapsed_time > 5500){  //Freeze if the loop takes too long
@@ -552,7 +539,6 @@ void loop(){
   // }
 }
 
-// Physical interrupts - whenever a signal from the radio reciever is detected, execture the following method:
 ISR(PCINT0_vect){
   /*----- CHANNEL 1 -----*/
   if(last_channel_1 == 0 && PINB & B00000001){

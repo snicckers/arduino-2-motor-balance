@@ -237,21 +237,18 @@ void gyro_data_processing(int * sensor_data[]){
 }
 
 /*--- CALCULATE ATTITUDE -----------------------------------------------------*/
-// A cheap way to find the inverse squareroot of a number.
-float invSqrt( float number ){
+// Cheap inverse Square Root (99.94% accurate to 1 / sqrt(x))
+float invSqrt( float x ){
+    float xhalf = 0.5f*x;
     union {
-        float f;
-        uint32_t i;
-    } conv;
-
-    float x2;
-    const float threehalfs = 1.5F;
-
-    x2 = number * 0.5F;
-    conv.f  = number;
-    conv.i  = 0x5f3759df - ( conv.i >> 1 );
-    conv.f  = conv.f * ( threehalfs - ( x2 * conv.f * conv.f ) );
-    return conv.f;
+        float x;
+        int i;
+    } u;
+    u.x = x;
+    u.i = 0x5f375a86 - (u.i >> 1);
+    /* The next line can be repeated any number of times to increase accuracy */
+    u.x = u.x * (1.5f - xhalf * u.x * u.x);
+    return u.x;
 }
 
 // Calculate attitude during runtime.
@@ -328,9 +325,9 @@ void calculate_attitude(int sensor_data[]){
 
 /*--- CALIBRATE IMU ----------------------------------------------------------*/
 void calibrate_imu(){
-  /* THE IMU MUST NOT BE MOVED DURING STARTUP */
+  /* KEEP IMU STATIONARY DURING STARTUP */
 
-  /*--- Simple Moving ave Setup ---*/
+  /*--- Simple Moving Average Setup ---*/
   for (int i = 0; i < sma_samples; i++){
     a_x_readings[i] = 0;
     a_y_readings[i] = 0;
@@ -357,11 +354,11 @@ void calibrate_imu(){
 
     accel_data_processing(&data_xyzt);
 
-    free(data_xyzt); // Clear dynamic memory allocation
+    free(data_xyzt); //Clear memory
 
     delay(3);
   }
-  // Find the averages drift / offset of the raw gyroscope data:
+  // Average drift / offset of the raw gyroscope data:
   g_drift[0] /= cal_count;
   g_drift[1] /= cal_count;
   g_drift[2] /= cal_count;
@@ -384,7 +381,7 @@ void flight_controller(){
   }
 
   /* DERIVATIVE COMPONENT*/
-  // Derivitive of the process variable (roll), NOT THE ERROR
+  // Take the derivative of the process variable (ROLL) instead of the error
   // Taking derivative of the error results in "Derivative Kick".
   // https://www.youtube.com/watch?v=KErYuh4VDtI
   pid_d = (-1.0f) * k_d * ((roll - previous_roll) / sample_time);
@@ -404,7 +401,7 @@ void flight_controller(){
   pwm_right = throttle + pid;
   pwm_left = throttle - pid;
 
-  /* clamp the PWM values. */
+  /* clamp PWM values. */
   //----------Right---------//
   if (pwm_right < 1015){
     pwm_right = 1015;
@@ -412,7 +409,7 @@ void flight_controller(){
   if (pwm_right > 1985){
     pwm_right = 1985;
   }
-    //----------Left---------//
+  //----------Left---------//
   if (pwm_left < 1015){
     pwm_left = 1015;
   }
@@ -540,7 +537,8 @@ void loop(){
   flight_controller();
 
   // DEBUGGING
-  debugging();
+  //debugging();
+  debug_loopTime();
 
   //CALIBRATION CONTROLS
   IR_remoteControl();

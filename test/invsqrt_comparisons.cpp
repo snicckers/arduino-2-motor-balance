@@ -33,7 +33,8 @@ float q3 = 0.0f;
 float correction_gain = 0.2f;
 int imu_mode = 0;
 
-long time_1, time_2, time_3, time_4;
+// Time taken for each imu calculation pass
+long time_1, time_2, time_3, time_4, time_5;
 
 /*--- DEBUGGING --------------------------------------------------------------*/
 // This method prints the time taken from the beginning of the scan to the time this method is envocked. In order not to kill performance, this is only printed every idk 100000 microseconds.
@@ -141,27 +142,29 @@ float invSqrt( float x ){
 }
 
 float fstInvSqrt (float x){
-  float halfx = 0.5f * x;
-  float y = x;
-  long i = *(long*)&y;
-  i = 0x5f3759df - (i>>1);
-  y = *(float*)&i;
-  y = y * (1.5f - (halfx * y * y));
-  y = y * (1.5f - (halfx * y * y));
-  return y;
+    float halfx = 0.5f * x;
+    float y = x;
+    long i = *(long*)&y;
+    i = 0x5f3759df - (i>>1);
+    y = *(float*)&i;
+    y = y * (1.5f - (halfx * y * y));
+    y = y * (1.5f - (halfx * y * y));
+    return y;
 }
 
-float sqrt2(const float x)
+#define SQRT_MAGIC_F 0x5f3759df
+float  sqrt2(const float x)
 {
-  union
-  {
-    int i;
-    float x;
-  } u;
+  const float xhalf = 0.5f*x;
 
+  union // get bits for floating value
+  {
+    float x;
+    int i;
+  } u;
   u.x = x;
-  u.i = (1<<29) + (u.i >> 1) - (1<<22);
-  return u.x;
+  u.i = SQRT_MAGIC_F - (u.i >> 1);  // gives initial guess y0
+  return x*u.x*(1.5f - xhalf*u.x*u.x);// Newton step, repeating increases accuracy
 }
 
 // Calculate attitude during runtime.
@@ -381,7 +384,7 @@ void calculate_attitude_sqrt2(int sensor_data[]){
   roll = atan2f(2*(q_0*q_1 + q_2*q_3), 1.0f - 2.0f*(q_1*q_1 + q_2*q_2)) * rad_to_degrees + 0.0f;
   pitch = asinf(2.0f * (q_0*q_2 - q_1*q_3)) * rad_to_degrees + 2.0f;
   yaw = atan2f(2*(q_0*q_3 + q_1*q_2), 1.0f - 2.0f*(q_2*q_2 + q_3*q_3)) * rad_to_degrees;
-  imu_mode = 0;
+  imu_mode = 3;
 }
 
 /*--- CALIBRATE IMU ----------------------------------------------------------*/
@@ -457,19 +460,24 @@ void loop(){
   } else if(imu_mode == 2){
     calculate_attitude_sqrt2(data_xyzt);
     time_4 = micros() - elapsed_time;
+  } else if(imu_mode == 3){
+    //calculate_attitude_sqrt5(data_xyzt);
+    time_5 = micros() - elapsed_time;
   }
 
 
   if (elapsed_time - last_time_print > 100000){
-      Serial.print(time_1);
-      Serial.print(" ");
+    Serial.print(time_1);
+    Serial.print(" ");
 
-      Serial.print(time_2);
-      Serial.print(" ");
-      Serial.print(time_3);
-      Serial.print(" ");
-      Serial.print(time_4);
-      Serial.print("\n");
+    Serial.print(time_2 - time_1);
+    Serial.print(" ");
+    Serial.print(time_3 - time_1);
+    Serial.print(" ");
+    Serial.print(time_4 - time_1);
+    Serial.print(" ");
+    Serial.print(time_5 - time_1);
+    Serial.print("\n");
 
     last_time_print = micros();
   }

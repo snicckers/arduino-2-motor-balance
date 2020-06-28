@@ -33,7 +33,15 @@ float q3 = 0.0f;
 float correction_gain = 0.2f;
 int imu_mode = 0;
 
-long time_1, time_2, time_3;
+float a_magnitude, a_roll, a_pitch;
+float g_roll, g_pitch;
+float g_modifier = 0.000076336;
+float g_modifier_rads = g_modifier * 0.017453293;
+float i_roll = 0, i_pitch = 0;
+long g_cal[3];
+
+// Time taken for each imu calculation pass
+long time_1, time_2, time_3, time_4, time_5;
 
 /*--- DEBUGGING --------------------------------------------------------------*/
 // This method prints the time taken from the beginning of the scan to the time this method is envocked. In order not to kill performance, this is only printed every idk 100000 microseconds.
@@ -210,86 +218,45 @@ void calculate_attitude_nick(int sensor_data[]){
   roll = atan2f(2*(q_0*q_1 + q_2*q_3), 1.0f - 2.0f*(q_1*q_1 + q_2*q_2)) * rad_to_degrees + 0.0f;
   pitch = asinf(2.0f * (q_0*q_2 - q_1*q_3)) * rad_to_degrees + 2.0f;
   yaw = atan2f(2*(q_0*q_3 + q_1*q_2), 1.0f - 2.0f*(q_2*q_2 + q_3*q_3)) * rad_to_degrees;
-  imu_mode = 1;
+
 }
 
 
 // Calculate attitude during runtime.
-void calculate_attitude_xio(int sensor_data[]){
-  /*--- Madgwick Filter ------------------------------------------------------*/
-  // Heavily based off of the Arduino Madgwick AHRS library by Paul Stoffregen
-  float recip_norm;
+void calculate_attitude_eulerAngles(int sensor_data[]){
+  /*--- Attitude from accelerometer -------------*/
+  a_magnitude = sqrt(pow(a_read_ave[0], 2) + pow(a_read_ave[1], 2) + pow(a_read_ave[2], 2));
+  a_roll = asin((float)a_read_ave[1] / a_magnitude) * rad_to_degrees; // X
+  a_pitch = asin((float)a_read_ave[0] / a_magnitude) * rad_to_degrees * (-1); // Y
+  // Attitude correction offset
+  a_roll -= 1.2;
+  a_pitch += 3.2;
 
-  float ax = sensor_data[0];
-  float ay = sensor_data[1];
-  float az = sensor_data[2];
-  float gx = sensor_data[4] * (lsb_coefficient) * (1.09) * degrees_to_rad;
-  float gy = sensor_data[5] * (lsb_coefficient) * (1.09) * degrees_to_rad;
-  float gz = sensor_data[6] * (lsb_coefficient) * (1.09) * degrees_to_rad;
+  /*--- Attitude from Gyroscope ----------------------------------------------*/
+  //0.000061069
+  float t = (micros() - elapsed_time);
+  elapsed_time = micros();
+  double lsb_coefficient = (1 / 32.8) * ((t) / 1000000);
+  g_roll += sensor_data[4] * lsb_coefficient * 1.09;
+  g_pitch += sensor_data[5] * lsb_coefficient * 1.09;
+  //1.502 = coefficient that makes gyro attitue match accel attitude.
+  /* Approximation for transfer of roll to pitch & vice versa using yaw. Thanks
+  Joop: */
+  g_roll += g_pitch * sin(sensor_data[6] * lsb_coefficient * 0.0174533 * 0.5);
+  g_pitch -= g_roll * sin(sensor_data[6] * lsb_coefficient * 0.0174533 * 0.5);
 
-  float qDot1 = 0.5f * (-q1*gx - q2*gy - q3*gz);
-  float qDot2 = 0.5f * (q0*gx + q2*gz - q3*gy);
-  float qDot3 = 0.5f * (q0*gy - q1*gz + q3*gx);
-  float qDot4 = 0.5f * (q0*gz + q1*gy - q2*gx);
+  /*--- Complimentary FIlter --------------------*/
+  // Apply complimentary filter if force magnitude is within reasonable range.
+  int f_magnitude_approx = abs(a_read_ave[0]) + abs(a_read_ave[1]) + abs(a_read_ave[2]);
+  if (f_magnitude_approx  > 3072 && f_magnitude_approx < 32768){ // 4096 = 1g for +- 8G range
+    float hpf = 0.9996; // High Pass Filter
+    float lpf = 1.0 - hpf; // Low Pass Fbilter
+    g_roll = hpf * g_roll + lpf * a_roll;
+    g_pitch = hpf * g_pitch + lpf * a_pitch;
+  }
 
-  /* If accelerometer values are valid (ie don't lead to NAN) then correct gyro
-  values */
-  if(!((ax == 0.0f) && (ay == 0.0f) && (az == 0.0f))) {
-
-  	// Normalise accelerometer measurement
-  	recip_norm = invSqrt(ax * ax + ay * ay + az * az);
-		ax *= recip_norm;
-  	ay *= recip_norm;
-  	az *= recip_norm;
-
-  	float _2q0 = 2.0f * q0;
-		float _2q1 = 2.0f * q1;
-  	float _2q2 = 2.0f * q2;
-  	float _2q3 = 2.0f * q3;
-		float _4q0 = 4.0f * q0;
-  	float _4q1 = 4.0f * q1;
-  	float _4q2 = 4.0f * q2;
-  	float _8q1 = 8.0f * q1;
-  	float _8q2 = 8.0f * q2;
-  	float q0q0 = q0 * q0;
-  	float q1q1 = q1 * q1;
-  	float q2q2 = q2 * q2;
-  	float q3q3 = q3 * q3;
-
-		// Gradient decent algorithm corrective step
-		float s0 = _4q0 * q2q2 + _2q2 * ax + _4q0 * q1q1 - _2q1 * ay;
-  	float s1 = _4q1 * q3q3 - _2q3 * ax + 4.0f * q0q0 * q1 - _2q0 * ay - _4q1 + _8q1 * q1q1 + _8q1 * q2q2 + _4q1 * az;
-		float s2 = 4.0f * q0q0 * q2 + _2q0 * ax + _4q2 * q3q3 - _2q3 * ay - _4q2 + _8q2 * q1q1 + _8q2 * q2q2 + _4q2 * az;
-  	float s3 = 4.0f * q1q1 * q3 - _2q1 * ax + 4.0f * q2q2 * q3 - _2q2 * ay;
-  	recip_norm = invSqrt(s0 * s0 + s1 * s1 + s2 * s2 + s3 * s3); // normalise step magnitude
-  	s0 *= recip_norm;
-  	s1 *= recip_norm;
-  	s2 *= recip_norm;
-  	s3 *= recip_norm;
-
-  	// Apply feedback step
-  	qDot1 -= correction_gain * s0;
-  	qDot2 -= correction_gain * s1;
-  	qDot3 -= correction_gain * s2;
-		qDot4 -= correction_gain * s3;
-	}
-
-  q0 += qDot1 * sample_time;
-  q1 += qDot2 * sample_time;
-  q2 += qDot3 * sample_time;
-  q3 += qDot4 * sample_time;
-
-  recip_norm = invSqrt(q0*q0 + q1*q1 + q2*q2 + q3*q3);
-  q0 *= recip_norm;
-  q1 *= recip_norm;
-  q2 *= recip_norm;
-  q3 *= recip_norm;
-
-  roll = atan2f(2*(q0*q1 + q2*q3), 1.0f - 2.0f*(q1*q1 + q2*q2)) * rad_to_degrees - 1.0f;
-  pitch = asinf(2.0f * (q0*q2 - q1*q3)) * rad_to_degrees + 3.0f;
-  yaw = atan2f(2*(q0*q3 + q1*q2), 1.0f - 2.0f*(q2*q2 + q3*q3)) * rad_to_degrees;
-  imu_mode = 0;
 }
+
 
 /*--- CALIBRATE IMU ----------------------------------------------------------*/
 void calibrate_imu(){
@@ -344,7 +311,7 @@ void setup() {
 
 /*--- MAIN -------------------------------------------------------------------*/
 void loop(){
-  sample_time = (micros() - elapsed_time) / 1000000.0f;
+  //sample_time = (micros() - elapsed_time) / 1000000.0f;
   elapsed_time = micros();
 
   //IMU
@@ -354,22 +321,26 @@ void loop(){
   gyro_data_processing(&data_xyzt);
 
   time_1 = micros() - elapsed_time;
+
   if (imu_mode == 0){
-    calculate_attitude_nick(data_xyzt);
+    calculate_attitude_eulerAngles(data_xyzt);
+
     time_2 = micros() - elapsed_time;
-  } else{
-    calculate_attitude_xio(data_xyzt);
+    imu_mode = 1;
+  } else if(imu_mode == 1){
+    calculate_attitude_nick(data_xyzt);
     time_3 = micros() - elapsed_time;
+    imu_mode = 0;
   }
 
   if (elapsed_time - last_time_print > 100000){
-      Serial.print(time_1);
-      Serial.print(" ");
+    Serial.print(time_1);
+    Serial.print(" ");
 
-      Serial.print(time_2);
-      Serial.print(" ");
-      Serial.print(time_3);
-      Serial.print("\n");
+    Serial.print(time_2);
+    Serial.print(" ");
+    Serial.print(time_3 - time_1);
+    Serial.print("\n");
 
     last_time_print = micros();
   }
@@ -378,7 +349,7 @@ void loop(){
   free(data_xyzt);  // Clear allocated memory for data array.
 
   // REFRESH RATE
-  while (micros() - elapsed_time < 5500);
+  while (micros() - elapsed_time < 5000);
   // if (micros() - elapsed_time > 5500){  //Freeze if the loop takes too long
   //   while(true);
   // }

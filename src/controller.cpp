@@ -240,7 +240,7 @@ void gyro_data_processing(int * sensor_data[]){
 
 /*--- CALCULATE ATTITUDE -----------------------------------------------------*/
 // Cheapest/fastest inverse square root I could find (99.94% accurate to 1 / sqrt(x))
-// Source: https://handwiki.org/wiki/Methods_of_computing_square_roots
+// Source: http://www.dbfinteractive.com/forum/index.php?topic=6269.0
 float invSqrt( float x ){
     float xhalf = 0.5f*x;
     union {

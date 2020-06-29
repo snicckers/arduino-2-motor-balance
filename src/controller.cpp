@@ -239,7 +239,8 @@ void gyro_data_processing(int * sensor_data[]){
 }
 
 /*--- CALCULATE ATTITUDE -----------------------------------------------------*/
-// Cheap inverse Square Root (99.94% accurate to 1 / sqrt(x))
+// Cheapest/fastest inverse square root I could find (99.94% accurate to 1 / sqrt(x))
+// Source: https://handwiki.org/wiki/Methods_of_computing_square_roots
 float invSqrt( float x ){
     float xhalf = 0.5f*x;
     union {

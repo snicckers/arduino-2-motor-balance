@@ -29,7 +29,6 @@ float q_3 = 0.0f;
 float correction_gain = 0.2f;
 
 /*--- DEBUGGING --------------------------------------------------------------*/
-// This method prints the time taken from the beginning of the scan to the time this method is envocked. In order not to kill performance, this is only printed every idk 100000 microseconds.
 void debug_loopTime(){
   if (elapsed_time - last_time_print > 100000){
     Serial.print(micros() - elapsed_time);

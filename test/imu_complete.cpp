@@ -99,10 +99,6 @@ void read_mpu(int ** sensor_output_array){
 
 /*--- Moving Average FIlter --------------------------------------------------*/
 void data_processing_startup(int * sensor_data[]){
-  /* The following takes a certain number of samples from
-  the acceleromet raw data ouptput, finds the average value.
-  It subtracks and adds the first and last samples to the
-  total each time the function is called. */
   total[0] -= readings_x[read_index];
   total[1] -= readings_y[read_index];
   total[2] -= readings_z[read_index];
@@ -124,10 +120,6 @@ void data_processing_startup(int * sensor_data[]){
 
 /*--- Moving Average FIlter --------------------------------------------------*/
 void data_processing(int * sensor_data[]){
-  /* The following takes a certain number of samples from
-  the acceleromer raw data ouptput, finds the average value.
-  It subtracks and adds the first and last samples to the
-  total each time the function is called. */
   total[0] -= readings_x[read_index];
   total[1] -= readings_y[read_index];
   total[2] -= readings_z[read_index];
@@ -196,12 +188,6 @@ void calculate_attitude(int sensor_data[]){
 
 /*--- Calibrate IMU ----------------------------------------------------------*/
 void calibrate_imu(){
-  /* This function runs for 16 seconds. It takes 2000 readings from the mpu6050
-  and adds them all up for the x, y, z axes of both the gyroscope and
-  accelerometer, then divides each value by the total. This accomplishes two
-  goals: For the gyro to be useful we MUST calculate the drift from each axis;
-  the average initial acceleration is used only to determine the initial
-  attitude for the IMU. */
   /* THE IMU MUST NOT BE MOVED DURING SETUP */
   /*--- Simple Moving Average Setup ---*/
   for (int i = 0; i < samples; i++){
@@ -248,10 +234,7 @@ void calibrate_imu(){
 
 /*--- Debugging --------------------------------------------------------------*/
 void debugging(){
-  /* The following tells us how much time  is required
-  to carry out all of the computations for the program.
-  For this to work properly the time control lines must be
-  commented out.*/
+
   // Serial.println(0);
   // Serial.print(" ");
   // Serial.print(loop_time);

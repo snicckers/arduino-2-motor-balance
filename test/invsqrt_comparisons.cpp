@@ -99,7 +99,6 @@ void read_mpu(int ** sensor_output_array){
 }
 
 /*--- DATA PROCESSING --------------------------------------------------------*/
-// Simple moving average filter. This method smoothes out the noisey accelerometer data using a simple moving average filter. It isn't too expensive. Be careful when setting the number of samples: Too many samples will lead to a large time-delay, too few samples will lead to a negligible smoothing effect.
 void accel_data_processing(int * sensor_data[]){  //Simple moving average filter
   a_read_total[0] -= a_x_readings[a_read_index];
   a_read_total[1] -= a_y_readings[a_read_index];
@@ -480,7 +479,7 @@ void loop(){
     Serial.print("\n");
 
     last_time_print = micros();
-  }
+  } //disgusting
 
   //debug_loopTime();
   free(data_xyzt);  // Clear allocated memory for data array.

@@ -44,20 +44,20 @@ float k_i = 0.05f; //1.82
 float k_d = 0.85f;  //1.04
 float desired_angle = 0.0;
 
-/*--- REMOTE CONTROL Globals -------------------------------------------------*/
+/*--- Remote Control Globals -------------------------------------------------*/
 IRrecv irrecv(12);    // IR reciver digital input to pin 12.
 decode_results results;
 byte last_channel_1, last_channel_2, last_channel_3, last_channel_4;
 int receiver_input_channel_1, receiver_input_channel_2, receiver_input_channel_3, receiver_input_channel_4;
 unsigned long timer_1, timer_2, timer_3, timer_4;
 
-/*--- DEBUGGING --------------------------------------------------------------*/
-// General debugging method. Change the mode to change what is printed.
+/*--- Debugging --------------------------------------------------------------*/
 void debugging(){
   int mode = 1;
 
+  // Serial Print has a significant impact on performance. Only use it once every n scans.
   if (elapsed_time - last_time_print > 20000){
-    if(mode == 1){
+    if(mode == 1){  // Used to test controller tuning
       Serial.print("Roll: ");
       Serial.print(roll);
 
@@ -88,7 +88,8 @@ void debugging(){
 
       Serial.print("\n");
     }
-    if(mode == 2){
+
+    if(mode == 2){  //  Used to test imu
     //  Serial.print("");
     //  Serial.print();
       // Serial.print(" aPitch: ");
@@ -106,7 +107,8 @@ void debugging(){
       // Serial.print(-90);
       Serial.print("\n");
     }
-    if(mode == 3){
+
+    if(mode == 3){  // Used to test imu
       // Serial.print(" gRoll: ");
       // Serial.print(roll);
       // Serial.print(" - gPitch: ");
@@ -147,7 +149,7 @@ void debugging(){
   }
 }
 
-// This method prints the time taken from the beginning of the scan to the time this method is envocked. In order not to kill performance, this is only printed every idk 100000 microseconds.
+// I don't have an oscilloscope so here you go:
 void debug_loopTime(){
   if (elapsed_time - last_time_print > 100000){
     Serial.print(micros() - elapsed_time);
@@ -209,7 +211,7 @@ void read_mpu(int ** sensor_output_array){
 }
 
 /*--- DATA PROCESSING --------------------------------------------------------*/
-// Simple moving average filter. This method smoothes out the noisey accelerometer data using a simple moving average filter. It isn't too expensive. Be careful when setting the number of sma_samples: Too many sma_samples will lead to a large time-delay, too few sma_samples will lead to a negligible smoothing effect.
+// Simple moving average filter. This method smoothes out noisey accelerometer data. It isn't too expensive. Be careful when setting the number of sma_samples: A large sma_samples will lead to a large time-delay, too few sma_samples will lead to a negligible smoothing effect.
 void accel_data_processing(int * sensor_data[]){  //Simple moving average filter
   a_read_total[0] -= a_x_readings[a_read_index];
   a_read_total[1] -= a_y_readings[a_read_index];

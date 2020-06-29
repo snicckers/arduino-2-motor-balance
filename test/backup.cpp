@@ -145,7 +145,7 @@ void calculate_attitude(int sensor_data[]){
   double lsb_coefficient = (1 / 32.8) * ((t) / 1000000);
   g_roll += sensor_data[4] * lsb_coefficient * 1.09;
   g_pitch += sensor_data[5] * lsb_coefficient * 1.09;
-  //1.502 = coefficient that makes gyro attitue match accel attitude.
+  //1.09 = coefficient that makes gyro attitue match accel attitude.
   /* Approximation for transfer of roll to pitch & vice versa using yaw. Thanks
   Joop: */
   g_roll += g_pitch * sin(sensor_data[6] * lsb_coefficient * 0.0174533 * 0.5);
@@ -457,7 +457,7 @@ void loop(){
   accel_data_processing(&data_xyzt);
   gyro_data_processing(&data_xyzt);
   calculate_attitude(data_xyzt);
-  free(data_xyzt);  // Clear allocated memory for data array.
+  free(data_xyzt);  
   // FLIGHT CONTROLLER
   flight_controller();
   // DEBUGGING

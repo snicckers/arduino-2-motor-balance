@@ -540,8 +540,8 @@ void loop(){
   flight_controller();
 
   // DEBUGGING
-  //debugging();
-  debug_loopTime();
+  debugging();
+  //debug_loopTime();
 
   //CALIBRATION CONTROLS
   IR_remoteControl();

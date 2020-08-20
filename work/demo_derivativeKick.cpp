@@ -37,7 +37,8 @@ float q_3 = 0.0f;
 float correction_gain = 0.2f;
 
 /*--- PID Globals ------------------------------------------------------------*/
-float pid, pwm_right, pwm_left, error, previous_error, previous_pitch;
+float pid, pid_e, pwm_right, pwm_left, error, previous_error, previous_pitch;
+float pid_p_e = 0, pid_i_e = 0, pid_d_e = 0;
 float pid_p = 0, pid_i = 0, pid_d = 0;
 float k_p = 3.78f; //1.4
 float k_i = 0.05f; //1.82
@@ -53,7 +54,7 @@ unsigned long timer_1, timer_2, timer_3, timer_4;
 
 /*--- Debugging --------------------------------------------------------------*/
 void debugging(){
-  int mode = 1;
+  int mode = 5;
 
   // Serial Print has a significant impact on performance. Only use it once every n scans.
   if (elapsed_time - last_time_print > 20000){
@@ -86,6 +87,44 @@ void debugging(){
       Serial.print(" - k_d: ");
       Serial.print(k_d);
 
+      Serial.print("\n");
+    }
+
+    if(mode == 5){  //  Used to test imu
+    //  Serial.print("");
+    //  Serial.print();
+      // Serial.print(" aPitch: ");
+      // Serial.print(a_pitch);
+      // Serial.print("gPitch: ");
+      Serial.print(pid);
+      Serial.print(" ");
+      // Serial.print(" - aRoll: ");
+      // Serial.print(a_roll);
+      // Serial.print(" - gRoll: ");
+      Serial.print(pid_e);
+      // Serial.print(" ");
+      // Serial.print(90);
+      // Serial.print(" ");
+      // Serial.print(-90);
+      Serial.print("\n");
+    }
+
+    if(mode == 6){  //  Used to test imu
+    //  Serial.print("");
+    //  Serial.print();
+      // Serial.print(" aPitch: ");
+      // Serial.print(a_pitch);
+      // Serial.print("gPitch: ");
+      Serial.print(pid_e);
+      //Serial.print(" ");
+      // Serial.print(" - aRoll: ");
+      // Serial.print(a_roll);
+      // Serial.print(" - gRoll: ");
+      //Serial.print(pid_e);
+      // Serial.print(" ");
+      // Serial.print(90);
+      // Serial.print(" ");
+      // Serial.print(-90);
       Serial.print("\n");
     }
 
@@ -139,6 +178,8 @@ void debugging(){
 
         Serial.print("\n");
       }
+
+
 
     last_time_print = micros();
     }
@@ -368,7 +409,7 @@ void calibrate_imu(){
 }
 
 /*--- FLIGHT CONTROLLER ------------------------------------------------------*/
-void flight_controller(){
+void flight_controller_p(){
   error = desired_angle - pitch;
 
   // PROPORTIONAL COMPONENET
@@ -388,15 +429,17 @@ void flight_controller(){
   // Taking derivative of the error results in "Derivative Kick".
   // https://www.youtube.com/watch?v=KErYuh4VDtI
   pid_d = (-1.0f) * k_d * ((pitch - previous_pitch) / sample_time);
-
   // pid_d = k_d * ((error - previous_error) / sample_time);
   /* Sum the the components to find the total pid value. */
   pid = pid_p + pid_i + pid_d;
 
   /* Clamp the maximum & minimum pid values*/
-  if (pid < -1000) pid = -1000;
-  if (pid > 1000) pid = 1000;
-
+  if (pid < -1000){
+    pid = -1000;
+  }
+  if (pid > 1000){
+    pid = 1000;
+  }
 
   /* Calculate PWM width. */
   pwm_right = throttle - pid;
@@ -404,12 +447,77 @@ void flight_controller(){
 
   /* clamp PWM values. */
   //----------Right---------//
-  if (pwm_right < 1000) pwm_right = 1000;
-  if (pwm_right > 2000) pwm_right = 2000;
+  if (pwm_right < 1000)
+    pwm_right = 1000;
+  if (pwm_right > 2000)
+    pwm_right = 2000;
 
   //----------Left---------//
-  if (pwm_left < 1000) pwm_left = 1000;
-  if (pwm_left > 2000) pwm_left = 2000;
+  if (pwm_left < 1000)
+    pwm_left = 1000;
+  if (pwm_left > 2000)
+    pwm_left = 2000;
+
+  if (start_motors == true){
+    right_prop.writeMicroseconds(pwm_right);
+    left_prop.writeMicroseconds(pwm_left);
+  } else{
+    right_prop.writeMicroseconds(1010);
+    left_prop.writeMicroseconds(1010);
+  }
+
+  previous_error = error;
+  previous_pitch = pitch;
+}
+
+void flight_controller_e(){
+  error = desired_angle - pitch;
+
+  // PROPORTIONAL COMPONENET
+  pid_p = k_p * error;
+
+  // INTEGRAL COMPONENT
+  int k_i_thresh = 8;
+  if (error < k_i_thresh && error > -k_i_thresh) {
+    pid_i = pid_i * (k_i * error);
+  }
+  if (error > k_i_thresh && error < -k_i_thresh){
+    pid_i = 0;
+  }
+
+  /* DERIVATIVE COMPONENT*/
+  // Take the derivative of the process variable (ROLL) instead of the error
+  // Taking derivative of the error results in "Derivative Kick".
+  // https://www.youtube.com/watch?v=KErYuh4VDtI
+  //pid_d_e = (-1.0f) * k_d * ((pitch - previous_pitch) / sample_time);
+  pid_d_e = k_d * ((error - previous_error) / sample_time);
+  /* Sum the the components to find the total pid value. */
+  pid_e = pid_p + pid_i + pid_d_e;
+
+  /* Clamp the maximum & minimum pid values*/
+  if (pid < -1000){
+    pid = -1000;
+  }
+  if (pid > 1000){
+    pid = 1000;
+  }
+
+  /* Calculate PWM width. */
+  pwm_right = throttle - pid;
+  pwm_left = throttle + pid;
+
+  /* clamp PWM values. */
+  //----------Right---------//
+  if (pwm_right < 1000)
+    pwm_right = 1000;
+  if (pwm_right > 2000)
+    pwm_right = 2000;
+
+  //----------Left---------//
+  if (pwm_left < 1000)
+    pwm_left = 1000;
+  if (pwm_left > 2000)
+    pwm_left = 2000;
 
   if (start_motors == true){
     right_prop.writeMicroseconds(pwm_right);
@@ -528,16 +636,18 @@ void loop(){
 
   // FLIGHT CONTROLLER
   change_setpoint();
-  flight_controller();
+  flight_controller_e(); // derivative action with error variable
+  flight_controller_p(); // derivative action with process variable
 
   // DEBUGGING
   debugging();
+  //debug_loopTime();
 
   //CALIBRATION CONTROLS
   IR_remoteControl();
 
   // REFRESH RATE
-  while (micros() - elapsed_time < 5000);
+  while (micros() - elapsed_time < 4000);
   // if (micros() - elapsed_time > 4000){  //Freeze if the loop takes too long
   //   while(true);
   // }

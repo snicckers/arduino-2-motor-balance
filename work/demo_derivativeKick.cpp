@@ -27,7 +27,7 @@ long int a_read_ave[3] = {0, 0, 0};
 /*--- IMU Globals ------------------------------------------------------------*/
 float rad_to_degrees = 57.29577951f;
 float degrees_to_rad = 0.017453293f;
-double lsb_coefficient = (1.0f / 32.8f); // see datasheet
+double lsb_coefficient; // see datasheet
 float roll, pitch, yaw;
 long g_drift[3];
 float q_0 = 1.0f;
@@ -307,6 +307,8 @@ void calculate_attitude(int sensor_data[]){
   float a_z = a_read_ave[2];
   normalize = invSqrt(a_x*a_x + a_y*a_y + a_z*a_z);
   a_x *= normalize; a_y *= normalize; a_z *= normalize;
+
+
 
   // 1.09 = fudge factor. g_x in radians / sec
   float g_x = sensor_data[4] * (lsb_coefficient) * (1.0) * degrees_to_rad;

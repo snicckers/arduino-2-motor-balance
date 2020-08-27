@@ -16,7 +16,7 @@ int previous_time_pressed;
 bool start_motors = false;
 
 //--- Simple Moving Average Globals ------------------------------------------*/
-const int sma_samples = 15;
+const int sma_samples = 5;
 int a_x_readings[sma_samples];
 int a_y_readings[sma_samples];
 int a_z_readings[sma_samples];
@@ -27,14 +27,14 @@ long int a_read_ave[3] = {0, 0, 0};
 /*--- IMU Globals ------------------------------------------------------------*/
 float rad_to_degrees = 57.29577951f;
 float degrees_to_rad = 0.017453293f;
-double lsb_coefficient = (1.0f / 32.8f); // see datasheet
+double lsb_coefficient; // see datasheet
 float roll, pitch, yaw;
 long g_drift[3];
 float q_0 = 1.0f;
 float q_1 = 0.0f;
 float q_2 = 0.0f;
 float q_3 = 0.0f;
-float correction_gain = 0.2f;
+float correction_gain = 0.1f;
 
 /*--- PID Globals ------------------------------------------------------------*/
 float pid, pwm_right, pwm_left, error, previous_error, previous_pitch;
@@ -141,7 +141,7 @@ void debugging(){
       }
 
     last_time_print = micros();
-    }
+  }
 
     if (elapsed_time - last_time_print > 20000){
       last_time_print = micros();
@@ -266,6 +266,11 @@ void calculate_attitude(int sensor_data[]){
   float a_z = a_read_ave[2];
   normalize = invSqrt(a_x*a_x + a_y*a_y + a_z*a_z);
   a_x *= normalize; a_y *= normalize; a_z *= normalize;
+
+  float mpu_t = ((float)sensor_data[3] + 12421.0f) / 340.0f;
+  float lsb_scale_offset = 0.328 * (mpu_t - 25.0f);
+
+  lsb_coefficient = (1.0f / (32.8f - lsb_scale_offset));
 
   // 1.09 = fudge factor. g_x in radians / sec
   float g_x = sensor_data[4] * (lsb_coefficient) * (1.0) * degrees_to_rad;

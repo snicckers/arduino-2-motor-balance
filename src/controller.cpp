@@ -16,7 +16,7 @@ int previous_time_pressed;
 bool start_motors = false;
 
 //--- Simple Moving Average Globals ------------------------------------------*/
-const int sma_samples = 5;
+const int sma_samples = 15;
 int a_x_readings[sma_samples];
 int a_y_readings[sma_samples];
 int a_z_readings[sma_samples];
@@ -269,10 +269,8 @@ void calculate_attitude(int sensor_data[]){
 
   float mpu_t = ((float)sensor_data[3] + 12421.0f) / 340.0f;
   float lsb_scale_offset = 0.328 * (mpu_t - 25.0f);
-
   lsb_coefficient = (1.0f / (32.8f - lsb_scale_offset));
 
-  // 1.09 = fudge factor. g_x in radians / sec
   float g_x = sensor_data[4] * (lsb_coefficient) * (1.0) * degrees_to_rad;
   float g_y = sensor_data[5] * (lsb_coefficient) * (1.0) * degrees_to_rad;
   float g_z = sensor_data[6] * (lsb_coefficient) * (1.0) * degrees_to_rad;

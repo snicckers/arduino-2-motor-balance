@@ -40,8 +40,8 @@ float correction_gain = 0.1f;
 float pid, pwm_right, pwm_left, error, previous_error, previous_pitch;
 float pid_p = 0, pid_i = 0, pid_d = 0;
 float k_p = 3.78f; //1.4
-float k_i = 0.05f; //1.82
-float k_d = 0.85f;  //1.04
+float k_i = 0.01f; //1.82
+float k_d = 0.70f;  //1.04
 float desired_angle = 0.0;
 
 /*--- Remote Control Globals -------------------------------------------------*/
@@ -90,39 +90,9 @@ void debugging(){
     }
 
     if(mode == 2){  //  Used to test imu
-    //  Serial.print("");
-    //  Serial.print();
-      // Serial.print(" aPitch: ");
-      // Serial.print(a_pitch);
-      // Serial.print("gPitch: ");
       Serial.print(pitch);
       Serial.print(" ");
-      // Serial.print(" - aRoll: ");
-      // Serial.print(a_roll);
-      // Serial.print(" - gRoll: ");
       Serial.print(roll);
-      // Serial.print(" ");
-      // Serial.print(90);
-      // Serial.print(" ");
-      // Serial.print(-90);
-      Serial.print("\n");
-    }
-
-    if(mode == 3){  // Used to test imu
-      // Serial.print(" gRoll: ");
-      // Serial.print(roll);
-      // Serial.print(" - gPitch: ");
-      Serial.print(pitch);
-      // Serial.print(" ");
-      // Serial.print(90);
-      // Serial.print(" ");
-      // Serial.print(-90);
-      // Serial.print(" - k_p: ");
-      // Serial.print(k_p);
-      // Serial.print(" - k_i: ");
-      // Serial.print(k_i);
-      // Serial.print(" - k_d: ");
-      // Serial.print(k_d);
       Serial.print("\n");
     }
 
@@ -400,7 +370,6 @@ void flight_controller(){
   if (pid < -1000) pid = -1000;
   if (pid > 1000) pid = 1000;
 
-
   /* Calculate PWM width. */
   pwm_right = throttle - pid;
   pwm_left = throttle + pid;
@@ -418,8 +387,8 @@ void flight_controller(){
     right_prop.writeMicroseconds(pwm_right);
     left_prop.writeMicroseconds(pwm_left);
   } else{
-    right_prop.writeMicroseconds(1010);
-    left_prop.writeMicroseconds(1010);
+    right_prop.writeMicroseconds(1000);
+    left_prop.writeMicroseconds(1000);
   }
 
   previous_error = error;
@@ -428,7 +397,7 @@ void flight_controller(){
 
 void change_setpoint(){
   if (receiver_input_channel_1 != 0){
-    desired_angle = map(receiver_input_channel_1, 1000, 2000, 35, -25);
+    desired_angle = map(receiver_input_channel_1, 1000, 2000, -30, 30);
   }
 }
 
@@ -540,12 +509,13 @@ void loop(){
   IR_remoteControl();
 
   // REFRESH RATE
-  while (micros() - elapsed_time < 5000);
-  // if (micros() - elapsed_time > 4000){  //Freeze if the loop takes too long
+  while (micros() - elapsed_time < 6000);
+  // if (micros() - elapsed_time > 10000){  //Freeze if the loop takes too long
   //   while(true);
   // }
 }
 
+/*--- INTERRUPTS -------------------------------------------------------------*/
 // Physical interrupts - whenever a signal from the radio reciever is detected, execture the following method:
 ISR(PCINT0_vect){
   /*----- CHANNEL 1 -----*/

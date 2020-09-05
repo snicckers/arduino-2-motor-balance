@@ -17,7 +17,7 @@
 -IC:/Users/Nicho/.platformio/packages/toolchain-atmelavr/lib/gcc/avr/5.4.0/include-fixed
 -IC:/Users/Nicho/.platformio/packages/toolchain-atmelavr/avr/include
 -IC:/Users/Nicho/.platformio/packages/tool-unity
--DPLATFORMIO=40304
+-DPLATFORMIO=50000
 -DARDUINO_AVR_UNO
 -DF_CPU=16000000L
 -DARDUINO_ARCH_AVR
